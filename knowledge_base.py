@@ -57,7 +57,7 @@ def time_logger(func):
 class KnowledgeBase:
     """沃工单知识库"""
     
-    def __init__(self, data_dir: str = DATA_DIR, use_llm: bool = True, use_zhipu_embedding: bool = False):
+    def __init__(self, data_dir: str = DATA_DIR, use_llm: bool = True, use_zhipu_embedding: bool = None):
         self.data_dir = data_dir
         self.parser = FileParser()
         self.vector_store = RedisVectorStore(use_zhipu=use_zhipu_embedding)
