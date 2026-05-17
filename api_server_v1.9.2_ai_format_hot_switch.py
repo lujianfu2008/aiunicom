@@ -14,39 +14,14 @@ from datetime import datetime
 import os
 import re
 import logging
-import functools
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'workorder-knowledge-base-secret-key-2024'
 CORS(app)
 
 kb = None
 llm = None
 query_tool = None
 auto_updater = None
-
-
-def check_auth():
-    """验证用户是否已登录"""
-    from config import AUTH_CONFIG
-
-    # 如果未配置认证信息，则不需要登录
-    if not AUTH_CONFIG['username'] or not AUTH_CONFIG['password']:
-        return True
-
-    # 检查session
-    from flask import session
-    return session.get('logged_in', False)
-
-
-def login_required(f):
-    """登录验证装饰器"""
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not check_auth():
-            return jsonify({'error': '请先登录'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 def init_app(knowledge_base, llm_instance=None, query_tool_instance=None):
@@ -68,123 +43,16 @@ def init_app(knowledge_base, llm_instance=None, query_tool_instance=None):
         print(f"自动文件监控启动失败: {e}")
 
 
-@app.route('/login')
-def login_page():
-    """登录页面"""
-    html = r'''
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>登录 - 知识库查询系统</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        .login-container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        h1 { color: #333; margin-bottom: 30px; text-align: center; }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; margin-bottom: 8px; color: #666; font-weight: 500; }
-        .form-group input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-        .form-group input:focus { outline: none; border-color: #1890ff; box-shadow: 0 0 0 2px rgba(24,144,255,0.2); }
-        .btn-login { width: 100%; background: #1890ff; color: white; border: none; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: 500; }
-        .btn-login:hover { background: #40a9ff; }
-        .error-message { color: #f5222d; margin-top: 10px; text-align: center; font-size: 14px; }
-        .success-message { color: #52c41a; margin-top: 10px; text-align: center; font-size: 14px; }
-    </style>
-</head>
-<body>
-    <div class="login-container">
-        <h1>🔐 登录系统</h1>
-        <form id="loginForm" onsubmit="handleLogin(event)">
-            <div class="form-group">
-                <label for="username">账号</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit" class="btn-login">登录</button>
-            <div id="message" class="error-message"></div>
-        </form>
-    </div>
-    <script>
-        function handleLogin(event) {
-            event.preventDefault();
-
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-
-            fetch('/api/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({username, password})
-            })
-            .then(response => response.json())
-            .then(data => {
-                const messageEl = document.getElementById('message');
-                if (data.success) {
-                    messageEl.className = 'success-message';
-                    messageEl.textContent = data.message;
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 1000);
-                } else {
-                    messageEl.className = 'error-message';
-                    messageEl.textContent = data.message || '登录失败';
-                }
-            })
-            .catch(error => {
-                document.getElementById('message').textContent = '登录请求失败';
-            });
-        }
-
-        // 检查是否已经登录
-        fetch('/api/check_auth')
-            .then(response => response.json())
-            .then(data => {
-                if (data.logged_in) {
-                    window.location.href = '/';
-                }
-            });
-    </script>
-</body>
-</html>'''
-    return render_template_string(html)
-
-
 @app.route('/')
 def index():
     """首页"""
-    # 检查是否已登录，如果未登录则重定向到登录页面
-    if not check_auth():
-        return '''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta http-equiv="refresh" content="0;url=/login">
-            <title>正在重定向...</title>
-        </head>
-        <body>
-            <p>正在重定向到登录页面...</p>
-            <script>
-                window.location.href = '/login';
-            </script>
-        </body>
-        </html>
-        '''
-
-    html = r'''
+    html = '''
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>知识库查询系统</title>
     <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
@@ -205,7 +73,7 @@ def index():
         .result-title { font-weight: bold; color: #1890ff; margin-bottom: 5px; font-size: 16px; cursor: pointer; }
         .result-title:hover { text-decoration: underline; color: #40a9ff; }
         .result-meta { color: #666; font-size: 14px; margin-bottom: 8px; }
-        .result-content { color: #333; line-height: 1.8; font-size: 14px; white-space: pre-line; }
+        .result-content { color: #333; line-height: 1.6; font-size: 14px; }
         .result-actions { margin-top: 10px; }
         .btn-view { background: #52c41a; color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
         .btn-view:hover { background: #73d13d; }
@@ -318,25 +186,6 @@ def index():
         .entity-info p { margin: 8px 0; color: #666; }
         .entity-properties h4 { margin: 15px 0 10px 0; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }
         .entity-properties p { margin: 8px 0; color: #666; }
-
-        .markdown-body { font-size: 14px; line-height: 1.8; color: #333; padding: 20px; background: #fafafa; border-radius: 8px; }
-        .markdown-body p { margin: 0.6em 0; line-height: 1.8; }
-        .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 { color: #1890ff; margin: 1em 0 0.5em; padding-bottom: 0.3em; border-bottom: 1px solid #e6f7ff; }
-        .markdown-body h1 { font-size: 1.5em; }
-        .markdown-body h2 { font-size: 1.3em; }
-        .markdown-body h3 { font-size: 1.15em; }
-        .markdown-body h4 { font-size: 1.05em; }
-        .markdown-body ul, .markdown-body ol { padding-left: 2em; margin: 0.5em 0; }
-        .markdown-body li { margin: 0.3em 0; line-height: 1.8; }
-        .markdown-body strong { color: #0969da; }
-        .markdown-body code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: Consolas, Monaco, monospace; }
-        .markdown-body pre { background: #f5f5f5; padding: 15px; border-radius: 8px; overflow-x: auto; margin: 1em 0; border: 1px solid #e8e8e8; }
-        .markdown-body pre code { background: none; padding: 0; font-size: 13px; }
-        .markdown-body blockquote { border-left: 4px solid #1890ff; padding: 10px 20px; margin: 1em 0; background: #e6f7ff; border-radius: 4px; color: #555; }
-        .markdown-body table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-        .markdown-body th, .markdown-body td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
-        .markdown-body th { background: #f5f5f5; font-weight: bold; }
-        .markdown-body hr { border: none; border-top: 1px solid #eee; margin: 1.5em 0; }
     </style>
 </head>
 <body>
@@ -359,8 +208,8 @@ def index():
         </div>
         
         <div class="tabs">
-            <div class="tab active" onclick="switchTab('content', this)">内容查找</div>
-            <div class="tab" onclick="switchTab('search', this)">智能搜索</div>
+            <div class="tab" onclick="switchTab('content', this)">内容查找</div>
+            <div class="tab active" onclick="switchTab('search', this)">智能搜索</div>
             <div class="tab" onclick="switchTab('qa', this)">智能问答</div>
             <div class="tab" onclick="switchTab('regex', this)">正则匹配</div>
             <div class="tab" onclick="switchTab('knowledge', this)">知识图谱</div>
@@ -369,15 +218,15 @@ def index():
             <div class="tab" onclick="switchTab('help', this)">帮助信息</div>
         </div>
         
-        <div id="search-panel" style="display:none">
+        <div id="search-panel">
             <div class="search-box">
                 <input type="text" class="search-input" id="search-input" placeholder="输入关键词进行语义搜索..." onkeypress="if(event.keyCode==13)search()">
                 <button class="search-btn" onclick="search()">搜索</button>
             </div>
             <div class="results" id="search-results"></div>
         </div>
-
-        <div id="content-panel">
+        
+        <div id="content-panel" style="display:none">
             <div class="search-box">
                 <input type="text" class="search-input" id="content-input" placeholder="输入关键词精确查找内容（多个关键词用空格分隔）..." onkeypress="if(event.keyCode==13)searchContent()">
                 <button class="search-btn" onclick="searchContent()">查找</button>
@@ -1254,25 +1103,33 @@ def index():
                     const toolbar = `
                         <div class="format-toolbar">
                             <span>显示格式:</span>
-                            <button class="format-btn" onclick="setFormat('raw')">原始文本</button>
-                            <button class="format-btn active" onclick="setFormat('smart')">智能格式</button>
+                            <button class="format-btn active" onclick="setFormat('raw')">原始文本</button>
+                            <button class="format-btn" onclick="setFormat('smart')">智能格式</button>
                             <button class="format-btn" onclick="setFormat('section')">分段显示</button>
+                            <button class="format-btn" onclick="setFormat('ai')">AI格式</button>
                             <button class="format-btn" onclick="setFormat('ai')">AI格式</button>
                         </div>
                     `;
-
-                    // 默认使用 Markdown 渲染
-                    if (typeof marked !== 'undefined') {
-                        const preprocessed = preprocessForMarkdown(content);
-                        const mdHtml = marked.parse(preprocessed, { breaks: true });
-                        document.getElementById('modal-content').innerHTML = toolbar +
-                            `<div id="content-display" class="markdown-body">${mdHtml}</div>`;
-                        highlightTextNodes(document.getElementById('content-display'), [], decodedPattern);
-                    } else {
-                        const smartFormatted = formatSmartContent(content, [], false, decodedPattern);
-                        document.getElementById('modal-content').innerHTML = toolbar +
-                            `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
-                    }
+                    
+                    // 使用正则高亮
+                    const highlightedContent = highlightRegexContent(content, decodedPattern);
+                    
+                    // 智能格式化 - 使用已有的 formatSmartContent 函数，传递 pattern 参数
+                    const smartFormatted = formatSmartContent(content, [], false, decodedPattern);
+                    
+                    // 分段格式化 - 使用已有的 formatSectionContent 函数，传递 pattern 参数
+                    const sectionFormatted = formatSectionContent(content, [], false, decodedPattern);
+                    
+                    // 默认显示智能格式
+                    window.formattedContent = {
+                        raw: `<pre>${escapeHtml(content)}</pre>`,
+                        smart: smartFormatted,
+                        section: sectionFormatted
+                    };
+                    
+                    // 创建 content-display 容器
+                    document.getElementById('modal-content').innerHTML = toolbar + 
+                        `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
                     document.getElementById('modal-content').dataset.rawContent = content;
                 })
                 .catch(err => {
@@ -1321,42 +1178,36 @@ def index():
                     const toolbar = `
                         <div class="format-toolbar">
                             <span>显示格式:</span>
-                            <button class="format-btn" onclick="setFormat('raw')">原始文本</button>
-                            <button class="format-btn active" onclick="setFormat('smart')">智能格式</button>
+                            <button class="format-btn active" onclick="setFormat('raw')">原始文本</button>
+                            <button class="format-btn" onclick="setFormat('smart')">智能格式</button>
                             <button class="format-btn" onclick="setFormat('section')">分段显示</button>
                             <button class="format-btn" onclick="setFormat('ai')">AI格式</button>
                         </div>
                     `;
-
+                    
                     // 如果有 pattern，使用正则高亮；否则使用关键词高亮
                     if (apiPattern) {
                         window.regexPattern = apiPattern;
-                        if (typeof marked !== 'undefined') {
-                            const preprocessed = preprocessForMarkdown(content);
-                            const mdHtml = marked.parse(preprocessed, { breaks: true });
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="markdown-body">${mdHtml}</div>`;
-                            highlightTextNodes(document.getElementById('content-display'), [], apiPattern);
-                        } else {
-                            const smartFormatted = formatSmartContent(content, [], false, apiPattern);
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
-                        }
+                        const highlightedContent = highlightRegexContent(content, apiPattern);
+                        const smartFormatted = formatSmartContent(content, [], false, apiPattern);
+                        const sectionFormatted = formatSectionContent(content, [], false, apiPattern);
+                        
+                        window.formattedContent = {
+                            raw: `<pre>${escapeHtml(content)}</pre>`,
+                            smart: smartFormatted,
+                            section: sectionFormatted
+                        };
+                        
+                        document.getElementById('modal-content').innerHTML = toolbar + 
+                            `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
                     } else {
                         window.contentKeywords = keywords && keywords.length > 0 ? keywords : apiKeywords;
                         window.exactMatch = exactMatch;
-                        if (typeof marked !== 'undefined') {
-                            const preprocessed = preprocessForMarkdown(content);
-                            const mdHtml = marked.parse(preprocessed, { breaks: true });
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="markdown-body">${mdHtml}</div>`;
-                            highlightTextNodes(document.getElementById('content-display'), window.contentKeywords, '');
-                        } else {
-                            const highlightFunc = exactMatch ? highlightAndEscapeExact : highlightAndEscape;
-                            const highlightedContent = highlightFunc(content, window.contentKeywords);
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="file-content">${highlightedContent}</div>`;
-                        }
+                        
+                        const highlightFunc = exactMatch ? highlightAndEscapeExact : highlightAndEscape;
+                        const highlightedContent = highlightFunc(content, window.contentKeywords);
+                        document.getElementById('modal-content').innerHTML = toolbar + 
+                            `<div id="content-display" class="file-content">${highlightedContent}</div>`;
                     }
                 })
                 .catch(err => {
@@ -1384,15 +1235,8 @@ def index():
                     display.innerHTML = highlightFunc(content, keywords);
                 }
             } else if (format === 'smart') {
-                if (typeof marked !== 'undefined') {
-                    display.className = 'markdown-body';
-                    const preprocessed = preprocessForMarkdown(content);
-                    display.innerHTML = marked.parse(preprocessed, { breaks: true });
-                    highlightTextNodes(display, keywords, pattern);
-                } else {
-                    display.className = 'formatted-content';
-                    display.innerHTML = formatSmartContent(content, keywords, window.exactMatch, pattern);
-                }
+                display.className = 'formatted-content';
+                display.innerHTML = formatSmartContent(content, keywords, window.exactMatch, pattern);
             } else if (format === 'section') {
                 display.className = 'formatted-content';
                 display.innerHTML = formatSectionContent(content, keywords, window.exactMatch, pattern);
@@ -1588,156 +1432,7 @@ def index():
             
             return result;
         }
-
-        // Markdown 预处理：将工单文本转为结构化 Markdown
-        function preprocessForMarkdown(text) {
-            // 如果文本几乎没有换行符（旧数据），先做智能段落分割
-            let newlineCount = (text.match(/\\n/g) || []).length;
-            let charCount = text.length;
-            if (charCount > 200 && newlineCount < charCount / 100) {
-                text = smartParagraphSplit(text);
-            }
-
-            let lines = text.split('\\n');
-            let result = [];
-            let prevWasBlank = true;
-
-            for (let i = 0; i < lines.length; i++) {
-                let line = lines[i];
-                let trimmed = line.trim();
-
-                // 空行保留为段落分隔符
-                if (!trimmed) {
-                    result.push('');
-                    prevWasBlank = true;
-                    continue;
-                }
-
-                // 检测是否为新块级元素的开始
-                let isNewBlock = /^#{1,6}\s/.test(trimmed) ||
-                    /^[一二三四五六七八九十]+[、.．]/.test(trimmed) ||
-                    /^\d+[.、)）]\s/.test(trimmed) ||
-                    /^[-*•]\s/.test(trimmed) ||
-                    /^[^：:\n]{1,25}[：:]/.test(trimmed);
-
-                // 在新块级元素前添加空行（确保 marked.js 正确识别）
-                if (isNewBlock && !prevWasBlank && result.length > 0) {
-                    result.push('');
-                }
-
-                // 键值对格式化：将 key 加粗
-                let kvMatch = trimmed.match(/^([^：:\n]{1,25})([：:])([\s]*)/);
-                if (kvMatch && !/^#{1,6}\s/.test(trimmed) && !/^[-*•]\s/.test(trimmed) && !/^\d+[.、)）]\s/.test(trimmed)) {
-                    let rest = trimmed.substring(kvMatch[1].length + kvMatch[2].length + kvMatch[3].length).trim();
-                    result.push('**' + kvMatch[1] + kvMatch[2] + '** ' + rest);
-                } else {
-                    result.push(trimmed);
-                }
-
-                prevWasBlank = false;
-            }
-
-            return result.join('\\n');
-        }
-
-        // 智能段落分割：在没有换行符的长文本中，通过模式识别插入段落分隔
-        function smartParagraphSplit(text) {
-            let result = text;
-
-            // 策略：只用最可靠的模式，宁可少分也不要误分
-
-            // 1. 多级编号 (1.1 / 2.1.3 / 3.2.1.1) - 最可靠
-            // 前面必须是空白或数字(页码)，编号后紧跟中文/字母
-            result = result.replace(/\s((?:\d+\.){1,4}\d+\s+[\u4e00-\u9fffA-Za-z])/g, '\\n\\n$1');
-
-            // 2. "第X章/节" 模式 - 非常可靠
-            result = result.replace(/\s(第[一二三四五六七八九十百千\d]+[章节部分篇])/g, '\\n\\n$1');
-
-            // 3. 中文编号 "一、" "二、" 等 - 仅在空格后出现时才匹配（避免误判）
-            result = result.replace(/\s([一二三四五六七八九十]+[、]\s)/g, '\\n\\n$1');
-
-            // 4. 目录条目中的 "数字+中文标题+空格+页码" 模式，清理掉无用的页码
-            //    例如 "1 业务需求 2 1.1 需求背景 2" 中的独立页码
-            result = result.replace(/\\n\\n(\d+)\s+([\u4e00-\u9fff])/g, '\\n\\n$2');
-
-            return result;
-        }
-
-        // DOM 级别的关键词/正则高亮（在 marked.js 渲染后使用）
-        function highlightTextNodes(element, keywords, pattern) {
-            if ((!keywords || keywords.length === 0) && !pattern) return;
-
-            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-            const textNodes = [];
-            while (walker.nextNode()) textNodes.push(walker.currentNode);
-
-            // 正则模式高亮
-            if (pattern) {
-                try {
-                    const regex = new RegExp(pattern, 'gi');
-                    textNodes.forEach(textNode => {
-                        let text = textNode.textContent;
-                        regex.lastIndex = 0;
-                        if (!regex.test(text)) return;
-                        regex.lastIndex = 0;
-                        let html = '';
-                        let lastIdx = 0;
-                        let match;
-                        while ((match = regex.exec(text)) !== null) {
-                            html += escapeHtml(text.substring(lastIdx, match.index));
-                            html += '<span class="highlight">' + escapeHtml(match[0]) + '</span>';
-                            lastIdx = regex.lastIndex;
-                        }
-                        html += escapeHtml(text.substring(lastIdx));
-                        const span = document.createElement('span');
-                        span.innerHTML = html;
-                        textNode.parentNode.replaceChild(span, textNode);
-                    });
-                } catch(e) {
-                    console.warn('Regex highlight failed:', e);
-                }
-                return;
-            }
-
-            // 关键词高亮（使用分词）
-            let finalKeywords = [];
-            keywords.forEach(keyword => {
-                if (keyword && keyword.trim()) {
-                    if (keyword.length > 2) {
-                        finalKeywords = finalKeywords.concat(splitKeyword(keyword));
-                    } else {
-                        finalKeywords.push(keyword);
-                    }
-                }
-            });
-            if (finalKeywords.length === 0) return;
-
-            textNodes.forEach(textNode => {
-                let text = textNode.textContent;
-                let modified = false;
-
-                finalKeywords.forEach(keyword => {
-                    if (keyword && keyword.trim()) {
-                        const escaped = escapeRegex(keyword.trim());
-                        const re = new RegExp(escaped, 'gi');
-                        if (re.test(text)) {
-                            modified = true;
-                            text = text.replace(new RegExp(escaped, 'gi'), '___HL_S___$&___HL_E___');
-                        }
-                    }
-                });
-
-                if (modified) {
-                    const html = escapeHtml(text)
-                        .replace(/___HL_S___/g, '<span class="highlight">')
-                        .replace(/___HL_E___/g, '</span>');
-                    const span = document.createElement('span');
-                    span.innerHTML = html;
-                    textNode.parentNode.replaceChild(span, textNode);
-                }
-            });
-        }
-
+        
         function closeModal() {
             document.getElementById('file-modal').style.display = 'none';
         }
@@ -2124,18 +1819,8 @@ def index():
             return result;
         }
         
-        // 页面加载初始化
+        // 智能问答快捷键支持
         document.addEventListener('DOMContentLoaded', function() {
-            // 显式初始化默认 tab 面板状态，确保 "内容查找" 为默认选中
-            const defaultTab = document.querySelector('.tab.active');
-            if (defaultTab) {
-                const tabName = defaultTab.onclick ? defaultTab.getAttribute('onclick').match(/switchTab\('(\w+)'/) : null;
-                if (tabName) {
-                    switchTab(tabName[1], defaultTab);
-                }
-            }
-
-            // 智能问答快捷键支持
             const qaInput = document.getElementById('qa-input');
             if (qaInput) {
                 qaInput.addEventListener('keydown', function(e) {
@@ -2556,7 +2241,6 @@ def index():
 
 
 @app.route('/api/search')
-@login_required
 def api_search():
     """搜索接口"""
     query = request.args.get('query', '')
@@ -2607,7 +2291,6 @@ def api_search():
 
 
 @app.route('/api/view_file')
-@login_required
 def api_view_file():
     """查看文件完整内容"""
     file_path = request.args.get('file_path', '')
@@ -2760,7 +2443,6 @@ def api_view_file():
 
 
 @app.route('/api/find_file')
-@login_required
 def api_find_file():
     """文件查找接口"""
     filename = request.args.get('filename', '')
@@ -2783,7 +2465,6 @@ def api_find_file():
 
 
 @app.route('/api/find_content')
-@login_required
 def api_find_content():
     """内容查找接口"""
     keywords_str = request.args.get('keywords', '')
@@ -2828,7 +2509,6 @@ def api_find_content():
 
 
 @app.route('/api/qa', methods=['POST'])
-@login_required
 def api_qa():
     """智能问答接口 - 支持本地模型和智谱模型"""
     data = request.get_json()
@@ -3085,7 +2765,6 @@ def _build_context(search_results, max_length=8000):
 
 
 @app.route('/api/categories')
-@login_required
 def api_categories():
     """问题分类接口"""
     try:
@@ -3096,7 +2775,6 @@ def api_categories():
 
 
 @app.route('/api/config', methods=['GET'])
-@login_required
 def api_get_config():
     """获取配置接口"""
     try:
@@ -3143,7 +2821,6 @@ def api_get_config():
 
 
 @app.route('/api/config', methods=['POST'])
-@login_required
 def api_save_config():
     """保存配置接口"""
     try:
@@ -3224,7 +2901,6 @@ def api_save_config():
 
 
 @app.route('/api/restart', methods=['POST'])
-@login_required
 def api_restart():
     """重启服务器接口"""
     try:
@@ -3246,7 +2922,6 @@ def api_restart():
 
 
 @app.route('/api/init', methods=['POST'])
-@login_required
 def api_init():
     """全量重建知识库接口"""
     try:
@@ -3282,7 +2957,6 @@ def api_init():
 
 
 @app.route('/api/rebuild', methods=['POST'])
-@login_required
 def api_rebuild():
     """增量更新知识库接口"""
     try:
@@ -3309,7 +2983,6 @@ def api_rebuild():
 
 
 @app.route('/api/stats')
-@login_required
 def api_stats():
     """统计信息接口"""
     try:
@@ -4030,75 +3703,6 @@ def api_kg_clear():
         return jsonify({'success': success})
     except Exception as e:
         logging.error(f"清空知识图谱失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-def check_auth():
-    """验证用户是否已登录"""
-    from config import AUTH_CONFIG
-
-    # 如果未配置认证信息，则不需要登录
-    if not AUTH_CONFIG['username'] or not AUTH_CONFIG['password']:
-        return True
-
-    # 检查session
-    from flask import session
-    return session.get('logged_in', False)
-
-
-def login_required(f):
-    """登录验证装饰器"""
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not check_auth():
-            return jsonify({'error': '请先登录'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
-
-@app.route('/api/login', methods=['POST'])
-def api_login():
-    """用户登录"""
-    try:
-        data = request.get_json()
-        username = data.get('username', '')
-        password = data.get('password', '')
-
-        from config import AUTH_CONFIG
-
-        # 验证用户名和密码
-        if username == AUTH_CONFIG['username'] and password == AUTH_CONFIG['password']:
-            from flask import session
-            session['logged_in'] = True
-            return jsonify({'success': True, 'message': '登录成功'})
-        else:
-            return jsonify({'success': False, 'message': '用户名或密码错误'}), 401
-
-    except Exception as e:
-        logging.error(f"登录失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/logout', methods=['POST'])
-def api_logout():
-    """用户登出"""
-    try:
-        from flask import session
-        session.pop('logged_in', None)
-        return jsonify({'success': True, 'message': '登出成功'})
-    except Exception as e:
-        logging.error(f"登出失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/check_auth', methods=['GET'])
-def api_check_auth():
-    """检查认证状态"""
-    try:
-        is_logged_in = check_auth()
-        return jsonify({'logged_in': is_logged_in})
-    except Exception as e:
-        logging.error(f"检查认证状态失败：{str(e)}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -14,39 +14,14 @@ from datetime import datetime
 import os
 import re
 import logging
-import functools
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'workorder-knowledge-base-secret-key-2024'
 CORS(app)
 
 kb = None
 llm = None
 query_tool = None
 auto_updater = None
-
-
-def check_auth():
-    """验证用户是否已登录"""
-    from config import AUTH_CONFIG
-
-    # 如果未配置认证信息，则不需要登录
-    if not AUTH_CONFIG['username'] or not AUTH_CONFIG['password']:
-        return True
-
-    # 检查session
-    from flask import session
-    return session.get('logged_in', False)
-
-
-def login_required(f):
-    """登录验证装饰器"""
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not check_auth():
-            return jsonify({'error': '请先登录'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 def init_app(knowledge_base, llm_instance=None, query_tool_instance=None):
@@ -68,123 +43,15 @@ def init_app(knowledge_base, llm_instance=None, query_tool_instance=None):
         print(f"自动文件监控启动失败: {e}")
 
 
-@app.route('/login')
-def login_page():
-    """登录页面"""
-    html = r'''
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>登录 - 知识库查询系统</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        .login-container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        h1 { color: #333; margin-bottom: 30px; text-align: center; }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; margin-bottom: 8px; color: #666; font-weight: 500; }
-        .form-group input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-        .form-group input:focus { outline: none; border-color: #1890ff; box-shadow: 0 0 0 2px rgba(24,144,255,0.2); }
-        .btn-login { width: 100%; background: #1890ff; color: white; border: none; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: 500; }
-        .btn-login:hover { background: #40a9ff; }
-        .error-message { color: #f5222d; margin-top: 10px; text-align: center; font-size: 14px; }
-        .success-message { color: #52c41a; margin-top: 10px; text-align: center; font-size: 14px; }
-    </style>
-</head>
-<body>
-    <div class="login-container">
-        <h1>🔐 登录系统</h1>
-        <form id="loginForm" onsubmit="handleLogin(event)">
-            <div class="form-group">
-                <label for="username">账号</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit" class="btn-login">登录</button>
-            <div id="message" class="error-message"></div>
-        </form>
-    </div>
-    <script>
-        function handleLogin(event) {
-            event.preventDefault();
-
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-
-            fetch('/api/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({username, password})
-            })
-            .then(response => response.json())
-            .then(data => {
-                const messageEl = document.getElementById('message');
-                if (data.success) {
-                    messageEl.className = 'success-message';
-                    messageEl.textContent = data.message;
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 1000);
-                } else {
-                    messageEl.className = 'error-message';
-                    messageEl.textContent = data.message || '登录失败';
-                }
-            })
-            .catch(error => {
-                document.getElementById('message').textContent = '登录请求失败';
-            });
-        }
-
-        // 检查是否已经登录
-        fetch('/api/check_auth')
-            .then(response => response.json())
-            .then(data => {
-                if (data.logged_in) {
-                    window.location.href = '/';
-                }
-            });
-    </script>
-</body>
-</html>'''
-    return render_template_string(html)
-
-
 @app.route('/')
 def index():
     """首页"""
-    # 检查是否已登录，如果未登录则重定向到登录页面
-    if not check_auth():
-        return '''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta http-equiv="refresh" content="0;url=/login">
-            <title>正在重定向...</title>
-        </head>
-        <body>
-            <p>正在重定向到登录页面...</p>
-            <script>
-                window.location.href = '/login';
-            </script>
-        </body>
-        </html>
-        '''
-
-    html = r'''
+    html = '''
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>知识库查询系统</title>
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f5f5; padding: 20px; }
@@ -205,7 +72,7 @@ def index():
         .result-title { font-weight: bold; color: #1890ff; margin-bottom: 5px; font-size: 16px; cursor: pointer; }
         .result-title:hover { text-decoration: underline; color: #40a9ff; }
         .result-meta { color: #666; font-size: 14px; margin-bottom: 8px; }
-        .result-content { color: #333; line-height: 1.8; font-size: 14px; white-space: pre-line; }
+        .result-content { color: #333; line-height: 1.6; font-size: 14px; }
         .result-actions { margin-top: 10px; }
         .btn-view { background: #52c41a; color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
         .btn-view:hover { background: #73d13d; }
@@ -285,58 +152,6 @@ def index():
         .method.post { background: #1890ff; }
         
         .search-info { background: #e6f7ff; padding: 10px 15px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; color: #1890ff; }
-        
-        .kg-controls { margin-bottom: 20px; }
-        .kg-stats { display: flex; gap: 20px; margin-bottom: 15px; }
-        .kg-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-        .kg-search { margin-bottom: 20px; }
-        .kg-container { display: flex; gap: 20px; height: 600px; }
-        .kg-sidebar { width: 300px; background: white; border-radius: 8px; padding: 15px; overflow-y: auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .kg-sidebar h3 { margin: 0 0 15px 0; color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
-        .kg-graph { flex: 1; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: relative; }
-        #kg-network { width: 100%; height: 100%; }
-        .kg-zoom-controls { position: absolute; right: 20px; top: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 1000; }
-        .kg-zoom-btn { width: 50px; height: 50px; border: none; border-radius: 8px; background: #1890ff; color: white; font-size: 28px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s; display: flex; align-items: center; justify-content: center; }
-        .kg-zoom-btn:hover { background: #40a9ff; transform: scale(1.1); }
-        .kg-zoom-btn:active { transform: scale(0.95); }
-        .entity-item { padding: 10px; margin: 5px 0; background: #f5f5f5; border-radius: 4px; cursor: pointer; transition: all 0.3s; }
-        .entity-item:hover { background: #e6f7ff; transform: translateX(5px); }
-        .entity-item.active { background: #1890ff; color: white; }
-        .entity-type { font-size: 12px; color: #666; margin-top: 5px; }
-        .entity-item.active .entity-type { color: #e6f7ff; }
-        .entity-item.show-all { background: #1890ff; color: white; font-weight: bold; }
-        .entity-item.show-all:hover { background: #40a9ff; }
-        
-        .entity-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-        .entity-modal-content { background: white; border-radius: 8px; width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
-        .entity-modal-header { padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; border-radius: 8px 8px 0 0; }
-        .entity-modal-header h3 { margin: 0; color: #333; }
-        .close-btn { background: none; border: none; font-size: 24px; color: #999; cursor: pointer; padding: 0 10px; }
-        .close-btn:hover { color: #1890ff; }
-        .entity-modal-body { padding: 20px; }
-        .entity-info { margin-bottom: 20px; }
-        .entity-info p { margin: 8px 0; color: #666; }
-        .entity-properties h4 { margin: 15px 0 10px 0; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-        .entity-properties p { margin: 8px 0; color: #666; }
-
-        .markdown-body { font-size: 14px; line-height: 1.8; color: #333; padding: 20px; background: #fafafa; border-radius: 8px; }
-        .markdown-body p { margin: 0.6em 0; line-height: 1.8; }
-        .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 { color: #1890ff; margin: 1em 0 0.5em; padding-bottom: 0.3em; border-bottom: 1px solid #e6f7ff; }
-        .markdown-body h1 { font-size: 1.5em; }
-        .markdown-body h2 { font-size: 1.3em; }
-        .markdown-body h3 { font-size: 1.15em; }
-        .markdown-body h4 { font-size: 1.05em; }
-        .markdown-body ul, .markdown-body ol { padding-left: 2em; margin: 0.5em 0; }
-        .markdown-body li { margin: 0.3em 0; line-height: 1.8; }
-        .markdown-body strong { color: #0969da; }
-        .markdown-body code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: Consolas, Monaco, monospace; }
-        .markdown-body pre { background: #f5f5f5; padding: 15px; border-radius: 8px; overflow-x: auto; margin: 1em 0; border: 1px solid #e8e8e8; }
-        .markdown-body pre code { background: none; padding: 0; font-size: 13px; }
-        .markdown-body blockquote { border-left: 4px solid #1890ff; padding: 10px 20px; margin: 1em 0; background: #e6f7ff; border-radius: 4px; color: #555; }
-        .markdown-body table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-        .markdown-body th, .markdown-body td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
-        .markdown-body th { background: #f5f5f5; font-weight: bold; }
-        .markdown-body hr { border: none; border-top: 1px solid #eee; margin: 1.5em 0; }
     </style>
 </head>
 <body>
@@ -359,25 +174,24 @@ def index():
         </div>
         
         <div class="tabs">
-            <div class="tab active" onclick="switchTab('content', this)">内容查找</div>
-            <div class="tab" onclick="switchTab('search', this)">智能搜索</div>
+            <div class="tab" onclick="switchTab('content', this)">内容查找</div>
+            <div class="tab active" onclick="switchTab('search', this)">智能搜索</div>
             <div class="tab" onclick="switchTab('qa', this)">智能问答</div>
             <div class="tab" onclick="switchTab('regex', this)">正则匹配</div>
-            <div class="tab" onclick="switchTab('knowledge', this)">知识图谱</div>
             <div class="tab" onclick="switchTab('system', this)">系统信息</div>
             <div class="tab" onclick="switchTab('api', this)">API 文档</div>
             <div class="tab" onclick="switchTab('help', this)">帮助信息</div>
         </div>
         
-        <div id="search-panel" style="display:none">
+        <div id="search-panel">
             <div class="search-box">
                 <input type="text" class="search-input" id="search-input" placeholder="输入关键词进行语义搜索..." onkeypress="if(event.keyCode==13)search()">
                 <button class="search-btn" onclick="search()">搜索</button>
             </div>
             <div class="results" id="search-results"></div>
         </div>
-
-        <div id="content-panel">
+        
+        <div id="content-panel" style="display:none">
             <div class="search-box">
                 <input type="text" class="search-input" id="content-input" placeholder="输入关键词精确查找内容（多个关键词用空格分隔）..." onkeypress="if(event.keyCode==13)searchContent()">
                 <button class="search-btn" onclick="searchContent()">查找</button>
@@ -598,49 +412,6 @@ def index():
             </div>
         </div>
         
-        <div id="knowledge-panel" style="display:none">
-            <div class="search-box">
-                <h2>知识图谱</h2>
-                <div class="kg-controls">
-                    <div class="kg-stats">
-                        <div class="stat-card">
-                            <div class="stat-number" id="kg-entity-count">0</div>
-                            <div class="stat-label">实体数量</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number" id="kg-relation-count">0</div>
-                            <div class="stat-label">关系数量</div>
-                        </div>
-                    </div>
-                    <div class="kg-actions">
-                        <button class="action-btn" onclick="loadKnowledgeGraph()">加载图谱</button>
-                        <button class="action-btn" onclick="extractFromText()">从文本抽取</button>
-                        <button class="action-btn" onclick="batchExtract()">批量抽取</button>
-                        <button class="action-btn" onclick="clearKnowledgeGraph()" style="background:#ff4d4f">清空图谱</button>
-                    </div>
-                </div>
-                
-                <div class="kg-search">
-                    <input type="text" id="kg-search-input" placeholder="搜索实体..." class="search-input">
-                    <button class="search-btn" onclick="searchEntities()">搜索</button>
-                </div>
-                
-                <div class="kg-container">
-                    <div class="kg-sidebar">
-                        <h3>实体列表</h3>
-                        <div id="kg-entity-list"></div>
-                    </div>
-                    <div class="kg-graph">
-                        <div id="kg-network"></div>
-                        <div class="kg-zoom-controls">
-                            <button class="kg-zoom-btn" onclick="zoomIn()" title="放大">+</button>
-                            <button class="kg-zoom-btn" onclick="zoomOut()" title="缩小">−</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
         <div id="help-panel" style="display:none">
             <div class="search-box">
                 <h2>帮助信息</h2>
@@ -709,7 +480,6 @@ def index():
             document.getElementById('content-panel').style.display = tab === 'content' ? 'block' : 'none';
             document.getElementById('qa-panel').style.display = tab === 'qa' ? 'block' : 'none';
             document.getElementById('regex-panel').style.display = tab === 'regex' ? 'block' : 'none';
-            document.getElementById('knowledge-panel').style.display = tab === 'knowledge' ? 'block' : 'none';
             document.getElementById('system-panel').style.display = tab === 'system' ? 'block' : 'none';
             document.getElementById('api-panel').style.display = tab === 'api' ? 'block' : 'none';
             document.getElementById('help-panel').style.display = tab === 'help' ? 'block' : 'none';
@@ -725,11 +495,6 @@ def index():
             // 加载系统信息
             if (tab === 'system') {
                 loadSystemInfo();
-            }
-            
-            // 加载知识图谱统计
-            if (tab === 'knowledge') {
-                loadKGStats();
             }
         }
         
@@ -1222,13 +987,13 @@ def index():
             
             document.getElementById('modal-title').textContent = decodedName;
             document.getElementById('modal-title').title = '点击打开文件：' + decodedPath;
-            document.getElementById('modal-title').onclick = function() { openFile(encodeURIComponent(filePath)); };
+            document.getElementById('modal-title').onclick = function() { openFile(filePath); };
             document.getElementById('modal-meta').innerHTML = `
-                <span>类型: ${problemType}</span>
+                <span>类型：${problemType}</span>
                 <span>ID: ${problemId}</span>
-                <span>路径: ${decodedPath}</span>
-                <button class="btn-open" onclick="openFile('${encodeURIComponent(filePath)}')">打开文件</button>
-                <button class="btn-open" onclick="downloadFile('${encodeURIComponent(filePath)}')">下载文件</button>
+                <span>路径：${decodedPath}</span>
+                <button class="btn-open" onclick="openFile('${filePath}')">打开文件</button>
+                <button class="btn-open" onclick="downloadFile('${filePath}')">下载文件</button>
             `;
             document.getElementById('modal-content').innerHTML = '<div class="loading">加载中...</div>';
             document.getElementById('file-modal').style.display = 'block';
@@ -1247,32 +1012,36 @@ def index():
                     // 存储原始内容供切换使用
                     window.rawContent = content;
                     window.regexPattern = decodedPattern;
-                    window.currentFilePath = decodedPath;
-                    window.aiFormattedContent = null; // 清除之前的AI格式化内容
                     
                     // 显示格式工具栏和内容
                     const toolbar = `
                         <div class="format-toolbar">
                             <span>显示格式:</span>
-                            <button class="format-btn" onclick="setFormat('raw')">原始文本</button>
-                            <button class="format-btn active" onclick="setFormat('smart')">智能格式</button>
+                            <button class="format-btn active" onclick="setFormat('raw')">原始文本</button>
+                            <button class="format-btn" onclick="setFormat('smart')">智能格式</button>
                             <button class="format-btn" onclick="setFormat('section')">分段显示</button>
-                            <button class="format-btn" onclick="setFormat('ai')">AI格式</button>
                         </div>
                     `;
-
-                    // 默认使用 Markdown 渲染
-                    if (typeof marked !== 'undefined') {
-                        const preprocessed = preprocessForMarkdown(content);
-                        const mdHtml = marked.parse(preprocessed, { breaks: true });
-                        document.getElementById('modal-content').innerHTML = toolbar +
-                            `<div id="content-display" class="markdown-body">${mdHtml}</div>`;
-                        highlightTextNodes(document.getElementById('content-display'), [], decodedPattern);
-                    } else {
-                        const smartFormatted = formatSmartContent(content, [], false, decodedPattern);
-                        document.getElementById('modal-content').innerHTML = toolbar +
-                            `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
-                    }
+                    
+                    // 使用正则高亮
+                    const highlightedContent = highlightRegexContent(content, decodedPattern);
+                    
+                    // 智能格式化 - 使用已有的 formatSmartContent 函数，传递 pattern 参数
+                    const smartFormatted = formatSmartContent(content, [], false, decodedPattern);
+                    
+                    // 分段格式化 - 使用已有的 formatSectionContent 函数，传递 pattern 参数
+                    const sectionFormatted = formatSectionContent(content, [], false, decodedPattern);
+                    
+                    // 默认显示智能格式
+                    window.formattedContent = {
+                        raw: `<pre>${escapeHtml(content)}</pre>`,
+                        smart: smartFormatted,
+                        section: sectionFormatted
+                    };
+                    
+                    // 创建 content-display 容器
+                    document.getElementById('modal-content').innerHTML = toolbar + 
+                        `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
                     document.getElementById('modal-content').dataset.rawContent = content;
                 })
                 .catch(err => {
@@ -1288,13 +1057,13 @@ def index():
             
             document.getElementById('modal-title').textContent = decodedName;
             document.getElementById('modal-title').title = '点击打开文件: ' + decodedPath;
-            document.getElementById('modal-title').onclick = function() { openFile(encodeURIComponent(filePath)); };
+            document.getElementById('modal-title').onclick = function() { openFile(filePath); };
             document.getElementById('modal-meta').innerHTML = `
                 <span>类型: ${problemType}</span>
                 <span>ID: ${problemId}</span>
                 <span>路径: ${decodedPath}</span>
-                <button class="btn-open" onclick="openFile('${encodeURIComponent(filePath)}')">打开文件</button>
-                <button class="btn-open" onclick="downloadFile('${encodeURIComponent(filePath)}')">下载文件</button>
+                <button class="btn-open" onclick="openFile('${filePath}')">打开文件</button>
+                <button class="btn-open" onclick="downloadFile('${filePath}')">下载文件</button>
             `;
             document.getElementById('modal-content').innerHTML = '<div class="loading">加载中...</div>';
             document.getElementById('file-modal').style.display = 'block';
@@ -1314,49 +1083,40 @@ def index():
                     
                     // 存储原始内容供切换使用
                     window.rawContent = content;
-                    window.currentFilePath = decodedPath;
-                    window.aiFormattedContent = null; // 清除之前的AI格式化内容
                     
                     // 显示格式工具栏和内容
                     const toolbar = `
                         <div class="format-toolbar">
                             <span>显示格式:</span>
-                            <button class="format-btn" onclick="setFormat('raw')">原始文本</button>
-                            <button class="format-btn active" onclick="setFormat('smart')">智能格式</button>
+                            <button class="format-btn active" onclick="setFormat('raw')">原始文本</button>
+                            <button class="format-btn" onclick="setFormat('smart')">智能格式</button>
                             <button class="format-btn" onclick="setFormat('section')">分段显示</button>
-                            <button class="format-btn" onclick="setFormat('ai')">AI格式</button>
                         </div>
                     `;
-
+                    
                     // 如果有 pattern，使用正则高亮；否则使用关键词高亮
                     if (apiPattern) {
                         window.regexPattern = apiPattern;
-                        if (typeof marked !== 'undefined') {
-                            const preprocessed = preprocessForMarkdown(content);
-                            const mdHtml = marked.parse(preprocessed, { breaks: true });
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="markdown-body">${mdHtml}</div>`;
-                            highlightTextNodes(document.getElementById('content-display'), [], apiPattern);
-                        } else {
-                            const smartFormatted = formatSmartContent(content, [], false, apiPattern);
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
-                        }
+                        const highlightedContent = highlightRegexContent(content, apiPattern);
+                        const smartFormatted = formatSmartContent(content, [], false, apiPattern);
+                        const sectionFormatted = formatSectionContent(content, [], false, apiPattern);
+                        
+                        window.formattedContent = {
+                            raw: `<pre>${escapeHtml(content)}</pre>`,
+                            smart: smartFormatted,
+                            section: sectionFormatted
+                        };
+                        
+                        document.getElementById('modal-content').innerHTML = toolbar + 
+                            `<div id="content-display" class="formatted-content">${smartFormatted}</div>`;
                     } else {
                         window.contentKeywords = keywords && keywords.length > 0 ? keywords : apiKeywords;
                         window.exactMatch = exactMatch;
-                        if (typeof marked !== 'undefined') {
-                            const preprocessed = preprocessForMarkdown(content);
-                            const mdHtml = marked.parse(preprocessed, { breaks: true });
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="markdown-body">${mdHtml}</div>`;
-                            highlightTextNodes(document.getElementById('content-display'), window.contentKeywords, '');
-                        } else {
-                            const highlightFunc = exactMatch ? highlightAndEscapeExact : highlightAndEscape;
-                            const highlightedContent = highlightFunc(content, window.contentKeywords);
-                            document.getElementById('modal-content').innerHTML = toolbar +
-                                `<div id="content-display" class="file-content">${highlightedContent}</div>`;
-                        }
+                        
+                        const highlightFunc = exactMatch ? highlightAndEscapeExact : highlightAndEscape;
+                        const highlightedContent = highlightFunc(content, window.contentKeywords);
+                        document.getElementById('modal-content').innerHTML = toolbar + 
+                            `<div id="content-display" class="file-content">${highlightedContent}</div>`;
                     }
                 })
                 .catch(err => {
@@ -1384,72 +1144,11 @@ def index():
                     display.innerHTML = highlightFunc(content, keywords);
                 }
             } else if (format === 'smart') {
-                if (typeof marked !== 'undefined') {
-                    display.className = 'markdown-body';
-                    const preprocessed = preprocessForMarkdown(content);
-                    display.innerHTML = marked.parse(preprocessed, { breaks: true });
-                    highlightTextNodes(display, keywords, pattern);
-                } else {
-                    display.className = 'formatted-content';
-                    display.innerHTML = formatSmartContent(content, keywords, window.exactMatch, pattern);
-                }
+                display.className = 'formatted-content';
+                display.innerHTML = formatSmartContent(content, keywords, window.exactMatch, pattern);
             } else if (format === 'section') {
                 display.className = 'formatted-content';
                 display.innerHTML = formatSectionContent(content, keywords, window.exactMatch, pattern);
-            } else if (format === 'ai') {
-                display.className = 'formatted-content';
-                // 检查是否已经有AI格式化的内容
-                if (window.aiFormattedContent) {
-                    display.innerHTML = window.aiFormattedContent;
-                    return;
-                }
-                
-                // 显示加载提示
-                display.innerHTML = '<div class="loading">AI格式化中...</div>';
-                
-                // 调用AI格式化
-                fetch('/api/ai_format', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        content: content,
-                        keywords: keywords,
-                        pattern: pattern,
-                        exact_match: window.exactMatch
-                    })
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        let formattedContent = data.formatted_content;
-                        
-                        // 检查高亮标记是否被保留
-                        if (pattern && !formattedContent.includes('<span class="highlight">')) {
-                            // 正则高亮
-                            formattedContent = highlightRegexContent(formattedContent, pattern);
-                        } else if (keywords.length > 0 && !formattedContent.includes('<span class="highlight">')) {
-                            // 关键词高亮
-                            const highlightFunc = window.exactMatch ? highlightAndEscapeExact : highlightAndEscape;
-                            formattedContent = highlightFunc(formattedContent, keywords);
-                        }
-                        
-                        // 移除空的高亮标签
-                        formattedContent = formattedContent.replace(/<span class="highlight">\s*<\/span>/g, '');
-                        
-                        // 转义 HTML 标签（保留高亮标签）
-                        formattedContent = formattedContent.replace(/&lt;(?!span class="highlight")/g, '<').replace(/&gt;(?!\/span)/g, '>').replace(/&amp;/g, '&');
-                        
-                        window.aiFormattedContent = formattedContent;
-                        display.innerHTML = formattedContent;
-                    } else {
-                        display.innerHTML = `<p style="color:red">AI格式化失败: ${data.error}</p>`;
-                    }
-                })
-                .catch(err => {
-                    display.innerHTML = `<p style="color:red">AI格式化失败: ${err}</p>`;
-                });
             }
         }
         
@@ -1588,156 +1287,7 @@ def index():
             
             return result;
         }
-
-        // Markdown 预处理：将工单文本转为结构化 Markdown
-        function preprocessForMarkdown(text) {
-            // 如果文本几乎没有换行符（旧数据），先做智能段落分割
-            let newlineCount = (text.match(/\\n/g) || []).length;
-            let charCount = text.length;
-            if (charCount > 200 && newlineCount < charCount / 100) {
-                text = smartParagraphSplit(text);
-            }
-
-            let lines = text.split('\\n');
-            let result = [];
-            let prevWasBlank = true;
-
-            for (let i = 0; i < lines.length; i++) {
-                let line = lines[i];
-                let trimmed = line.trim();
-
-                // 空行保留为段落分隔符
-                if (!trimmed) {
-                    result.push('');
-                    prevWasBlank = true;
-                    continue;
-                }
-
-                // 检测是否为新块级元素的开始
-                let isNewBlock = /^#{1,6}\s/.test(trimmed) ||
-                    /^[一二三四五六七八九十]+[、.．]/.test(trimmed) ||
-                    /^\d+[.、)）]\s/.test(trimmed) ||
-                    /^[-*•]\s/.test(trimmed) ||
-                    /^[^：:\n]{1,25}[：:]/.test(trimmed);
-
-                // 在新块级元素前添加空行（确保 marked.js 正确识别）
-                if (isNewBlock && !prevWasBlank && result.length > 0) {
-                    result.push('');
-                }
-
-                // 键值对格式化：将 key 加粗
-                let kvMatch = trimmed.match(/^([^：:\n]{1,25})([：:])([\s]*)/);
-                if (kvMatch && !/^#{1,6}\s/.test(trimmed) && !/^[-*•]\s/.test(trimmed) && !/^\d+[.、)）]\s/.test(trimmed)) {
-                    let rest = trimmed.substring(kvMatch[1].length + kvMatch[2].length + kvMatch[3].length).trim();
-                    result.push('**' + kvMatch[1] + kvMatch[2] + '** ' + rest);
-                } else {
-                    result.push(trimmed);
-                }
-
-                prevWasBlank = false;
-            }
-
-            return result.join('\\n');
-        }
-
-        // 智能段落分割：在没有换行符的长文本中，通过模式识别插入段落分隔
-        function smartParagraphSplit(text) {
-            let result = text;
-
-            // 策略：只用最可靠的模式，宁可少分也不要误分
-
-            // 1. 多级编号 (1.1 / 2.1.3 / 3.2.1.1) - 最可靠
-            // 前面必须是空白或数字(页码)，编号后紧跟中文/字母
-            result = result.replace(/\s((?:\d+\.){1,4}\d+\s+[\u4e00-\u9fffA-Za-z])/g, '\\n\\n$1');
-
-            // 2. "第X章/节" 模式 - 非常可靠
-            result = result.replace(/\s(第[一二三四五六七八九十百千\d]+[章节部分篇])/g, '\\n\\n$1');
-
-            // 3. 中文编号 "一、" "二、" 等 - 仅在空格后出现时才匹配（避免误判）
-            result = result.replace(/\s([一二三四五六七八九十]+[、]\s)/g, '\\n\\n$1');
-
-            // 4. 目录条目中的 "数字+中文标题+空格+页码" 模式，清理掉无用的页码
-            //    例如 "1 业务需求 2 1.1 需求背景 2" 中的独立页码
-            result = result.replace(/\\n\\n(\d+)\s+([\u4e00-\u9fff])/g, '\\n\\n$2');
-
-            return result;
-        }
-
-        // DOM 级别的关键词/正则高亮（在 marked.js 渲染后使用）
-        function highlightTextNodes(element, keywords, pattern) {
-            if ((!keywords || keywords.length === 0) && !pattern) return;
-
-            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-            const textNodes = [];
-            while (walker.nextNode()) textNodes.push(walker.currentNode);
-
-            // 正则模式高亮
-            if (pattern) {
-                try {
-                    const regex = new RegExp(pattern, 'gi');
-                    textNodes.forEach(textNode => {
-                        let text = textNode.textContent;
-                        regex.lastIndex = 0;
-                        if (!regex.test(text)) return;
-                        regex.lastIndex = 0;
-                        let html = '';
-                        let lastIdx = 0;
-                        let match;
-                        while ((match = regex.exec(text)) !== null) {
-                            html += escapeHtml(text.substring(lastIdx, match.index));
-                            html += '<span class="highlight">' + escapeHtml(match[0]) + '</span>';
-                            lastIdx = regex.lastIndex;
-                        }
-                        html += escapeHtml(text.substring(lastIdx));
-                        const span = document.createElement('span');
-                        span.innerHTML = html;
-                        textNode.parentNode.replaceChild(span, textNode);
-                    });
-                } catch(e) {
-                    console.warn('Regex highlight failed:', e);
-                }
-                return;
-            }
-
-            // 关键词高亮（使用分词）
-            let finalKeywords = [];
-            keywords.forEach(keyword => {
-                if (keyword && keyword.trim()) {
-                    if (keyword.length > 2) {
-                        finalKeywords = finalKeywords.concat(splitKeyword(keyword));
-                    } else {
-                        finalKeywords.push(keyword);
-                    }
-                }
-            });
-            if (finalKeywords.length === 0) return;
-
-            textNodes.forEach(textNode => {
-                let text = textNode.textContent;
-                let modified = false;
-
-                finalKeywords.forEach(keyword => {
-                    if (keyword && keyword.trim()) {
-                        const escaped = escapeRegex(keyword.trim());
-                        const re = new RegExp(escaped, 'gi');
-                        if (re.test(text)) {
-                            modified = true;
-                            text = text.replace(new RegExp(escaped, 'gi'), '___HL_S___$&___HL_E___');
-                        }
-                    }
-                });
-
-                if (modified) {
-                    const html = escapeHtml(text)
-                        .replace(/___HL_S___/g, '<span class="highlight">')
-                        .replace(/___HL_E___/g, '</span>');
-                    const span = document.createElement('span');
-                    span.innerHTML = html;
-                    textNode.parentNode.replaceChild(span, textNode);
-                }
-            });
-        }
-
+        
         function closeModal() {
             document.getElementById('file-modal').style.display = 'none';
         }
@@ -2124,18 +1674,8 @@ def index():
             return result;
         }
         
-        // 页面加载初始化
+        // 智能问答快捷键支持
         document.addEventListener('DOMContentLoaded', function() {
-            // 显式初始化默认 tab 面板状态，确保 "内容查找" 为默认选中
-            const defaultTab = document.querySelector('.tab.active');
-            if (defaultTab) {
-                const tabName = defaultTab.onclick ? defaultTab.getAttribute('onclick').match(/switchTab\('(\w+)'/) : null;
-                if (tabName) {
-                    switchTab(tabName[1], defaultTab);
-                }
-            }
-
-            // 智能问答快捷键支持
             const qaInput = document.getElementById('qa-input');
             if (qaInput) {
                 qaInput.addEventListener('keydown', function(e) {
@@ -2225,328 +1765,6 @@ def index():
             }
         });
         
-        // ==================== 知识图谱相关函数 ====================
-        
-        let kgNetwork = null;
-        
-        function loadKGStats() {
-            fetch('/api/kg/stats')
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById('kg-entity-count').textContent = data.entity_count || 0;
-                    document.getElementById('kg-relation-count').textContent = data.relation_count || 0;
-                })
-                .catch(err => console.error('加载知识图谱统计失败:', err));
-        }
-        
-        function loadKnowledgeGraph() {
-            fetch('/api/kg/graph')
-                .then(r => r.json())
-                .then(data => {
-                    displayKnowledgeGraph(data);
-                    loadEntityList(data.nodes);
-                })
-                .catch(err => {
-                    console.error('加载知识图谱失败:', err);
-                    alert(`加载知识图谱失败: ${err}`);
-                });
-        }
-        
-        function displayKnowledgeGraph(data) {
-            const container = document.getElementById('kg-network');
-            
-            const nodes = new vis.DataSet(data.nodes.map(node => ({
-                id: node.id,
-                label: node.label,
-                group: node.group,
-                title: node.title,
-                font: { size: 14, face: 'Microsoft YaHei' },
-                shadow: true
-            })));
-            
-            const edges = new vis.DataSet(data.edges.map(edge => ({
-                id: edge.id,
-                from: edge.from,
-                to: edge.to,
-                label: edge.label,
-                title: edge.title,
-                arrows: 'to',
-                font: { size: 12, face: 'Microsoft YaHei', align: 'middle' },
-                smooth: { type: 'curvedCW', roundness: 0.2 }
-            })));
-            
-            const graphData = { nodes, edges };
-            
-            const options = {
-                nodes: {
-                    shape: 'dot',
-                    size: 20,
-                    borderWidth: 2,
-                    shadow: true,
-                    color: {
-                        background: '#e6f7ff',
-                        border: '#1890ff',
-                        highlight: {
-                            background: '#1890ff',
-                            border: '#0050b3'
-                        }
-                    }
-                },
-                edges: {
-                    width: 2,
-                    shadow: true,
-                    color: { color: '#999', highlight: '#1890ff' }
-                },
-                physics: {
-                    enabled: true,
-                    barnesHut: {
-                        gravitationalConstant: -3000,
-                        centralGravity: 0.3,
-                        springLength: 100
-                    }
-                },
-                interaction: {
-                    hover: true,
-                    tooltipDelay: 200,
-                    zoomView: true,
-                    zoomSpeed: 0.2
-                }
-            };
-            
-            if (kgNetwork) {
-                kgNetwork.destroy();
-            }
-            
-            kgNetwork = new vis.Network(container, graphData, options);
-            
-            kgNetwork.on('click', function(params) {
-                if (params.nodes.length > 0) {
-                    const nodeId = params.nodes[0];
-                    showEntityDetails(nodeId, null);
-                }
-            });
-        }
-        
-        function zoomIn() {
-            if (kgNetwork) {
-                const scale = kgNetwork.getScale();
-                kgNetwork.moveTo({ scale: scale * 1.3 });
-            }
-        }
-        
-        function zoomOut() {
-            if (kgNetwork) {
-                const scale = kgNetwork.getScale();
-                kgNetwork.moveTo({ scale: scale / 1.3 });
-            }
-        }
-        
-        function showAllEntities() {
-            // 显示全部实体图谱
-            loadKnowledgeGraph();
-            
-            // 清除选中状态
-            document.querySelectorAll('.entity-item').forEach(item => {
-                item.classList.remove('active');
-            });
-        }
-        
-        function showEntityDetails(entityId, event) {
-            fetch(`/api/kg/entity/${entityId}`)
-                .then(r => r.json())
-                .then(data => {
-                    const entity = data.entity;
-                    const relations = data.relations;
-                    
-                    document.querySelectorAll('.entity-item').forEach(item => {
-                        item.classList.remove('active');
-                    });
-                    
-                    if (event) {
-                        event.target.closest('.entity-item')?.classList.add('active');
-                    }
-                    
-                    // 更新图谱显示
-                    fetch(`/api/kg/graph?entity_id=${entityId}&depth=2`)
-                        .then(r => r.json())
-                        .then(graphData => {
-                            displayKnowledgeGraph(graphData);
-                        });
-                })
-                .catch(err => console.error('获取实体详情失败:', err));
-        }
-        
-        function showEntityModal(entity) {
-            // 创建弹窗
-            const modal = document.createElement('div');
-            modal.className = 'entity-modal';
-            modal.innerHTML = `
-                <div class="entity-modal-content">
-                    <div class="entity-modal-header">
-                        <h3>${entity.name}</h3>
-                        <button class="close-btn" onclick="closeEntityModal()">×</button>
-                    </div>
-                    <div class="entity-modal-body">
-                        <div class="entity-info">
-                            <p><strong>类型:</strong> ${entity.type}</p>
-                            <p><strong>创建时间:</strong> ${new Date(entity.created_at).toLocaleString()}</p>
-                            <p><strong>ID:</strong> ${entity.id}</p>
-                        </div>
-                        <div class="entity-properties">
-                            <h4>属性:</h4>
-                            ${Object.keys(entity.properties).length > 0 ? 
-                                Object.entries(entity.properties).map(([key, value]) => 
-                                    `<p><strong>${key}:</strong> ${value}</p>`).join('') : 
-                                '<p>无属性</p>'}
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            // 添加到页面
-            document.body.appendChild(modal);
-            
-            // 点击弹窗外部关闭
-            modal.onclick = function(e) {
-                if (e.target === modal) {
-                    closeEntityModal();
-                }
-            };
-        }
-        
-        function closeEntityModal() {
-            const modal = document.querySelector('.entity-modal');
-            if (modal) {
-                document.body.removeChild(modal);
-            }
-        }
-        
-        function loadEntityList(nodes) {
-            const listContainer = document.getElementById('kg-entity-list');
-            let html = '';
-            
-            // 添加显示全部按钮
-            html += `<div class="entity-item show-all" onclick="showAllEntities()">
-                <div>显示全部实体</div>
-                <div class="entity-type">共 ${nodes.length} 个实体</div>
-            </div>`;
-            
-            nodes.forEach(node => {
-                html += `<div class="entity-item" onclick="showEntityDetails('${node.id}', event)">
-                    <div>${node.label}</div>
-                    <div class="entity-type">${node.group}</div>
-                </div>`;
-            });
-            
-            listContainer.innerHTML = html || '<p style="color:#999">暂无实体</p>';
-        }
-        
-        function searchEntities() {
-            const keyword = document.getElementById('kg-search-input').value.trim();
-            if (!keyword) {
-                alert('请输入搜索关键词');
-                return;
-            }
-            
-            fetch(`/api/kg/entities?keyword=${encodeURIComponent(keyword)}`)
-                .then(r => r.json())
-                .then(data => {
-                    loadEntityList(data.entities.map(e => ({
-                        id: e.id,
-                        label: e.name,
-                        group: e.type
-                    })));
-                })
-                .catch(err => {
-                    console.error('搜索实体失败:', err);
-                    alert(`搜索实体失败: ${err}`);
-                });
-        }
-        
-        function extractFromText() {
-            const text = prompt('请输入要抽取知识的文本：');
-            if (!text) return;
-            
-            if (!confirm('确定要从该文本中抽取知识吗？这将调用 LLM 进行分析。')) return;
-            
-            fetch('/api/kg/extract', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    alert(`抽取成功！\\n实体数：${data.entities_count}\\n关系数：${data.relations_count}`);
-                    loadKGStats();
-                    loadKnowledgeGraph();
-                } else {
-                    alert(`抽取失败：${data.error}`);
-                }
-            })
-            .catch(err => {
-                console.error('知识抽取失败:', err);
-                alert(`知识抽取失败: ${err}`);
-            });
-        }
-        
-        function batchExtract() {
-            const limit = prompt('请输入要处理的文档数量（建议不超过10）：', '5');
-            if (!limit) return;
-            
-            if (!confirm(`确定要从 ${limit} 个文档中批量抽取知识吗？\\n这可能需要较长时间。`)) return;
-            
-            alert('批量抽取已开始，请稍候...');
-            
-            fetch('/api/kg/batch_extract', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ limit: parseInt(limit) })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    alert(`批量抽取完成！\\n` +
-                          `处理文档：${data.processed_documents}/${data.total_documents}\\n` +
-                          `实体数：${data.saved_entities}\\n` +
-                          `关系数：${data.saved_relations}`);
-                    loadKGStats();
-                    loadKnowledgeGraph();
-                } else {
-                    alert(`批量抽取失败：${data.error}`);
-                }
-            })
-            .catch(err => {
-                console.error('批量抽取失败:', err);
-                alert(`批量抽取失败: ${err}`);
-            });
-        }
-        
-        function clearKnowledgeGraph() {
-            if (!confirm('确定要清空知识图谱吗？此操作不可逆！')) return;
-            if (!confirm('再次确认：真的要清空所有实体和关系吗？')) return;
-            
-            fetch('/api/kg/clear', { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('知识图谱已清空');
-                        loadKGStats();
-                        if (kgNetwork) {
-                            kgNetwork.destroy();
-                            kgNetwork = null;
-                        }
-                        document.getElementById('kg-entity-list').innerHTML = '<p style="color:#999">暂无实体</p>';
-                    } else {
-                        alert('清空失败');
-                    }
-                })
-                .catch(err => {
-                    console.error('清空知识图谱失败:', err);
-                    alert(`清空知识图谱失败: ${err}`);
-                });
-        }
-        
         loadStats();
     </script>
 </body>
@@ -2556,7 +1774,6 @@ def index():
 
 
 @app.route('/api/search')
-@login_required
 def api_search():
     """搜索接口"""
     query = request.args.get('query', '')
@@ -2607,7 +1824,6 @@ def api_search():
 
 
 @app.route('/api/view_file')
-@login_required
 def api_view_file():
     """查看文件完整内容"""
     file_path = request.args.get('file_path', '')
@@ -2760,7 +1976,6 @@ def api_view_file():
 
 
 @app.route('/api/find_file')
-@login_required
 def api_find_file():
     """文件查找接口"""
     filename = request.args.get('filename', '')
@@ -2783,7 +1998,6 @@ def api_find_file():
 
 
 @app.route('/api/find_content')
-@login_required
 def api_find_content():
     """内容查找接口"""
     keywords_str = request.args.get('keywords', '')
@@ -2828,7 +2042,6 @@ def api_find_content():
 
 
 @app.route('/api/qa', methods=['POST'])
-@login_required
 def api_qa():
     """智能问答接口 - 支持本地模型和智谱模型"""
     data = request.get_json()
@@ -3085,7 +2298,6 @@ def _build_context(search_results, max_length=8000):
 
 
 @app.route('/api/categories')
-@login_required
 def api_categories():
     """问题分类接口"""
     try:
@@ -3096,7 +2308,6 @@ def api_categories():
 
 
 @app.route('/api/config', methods=['GET'])
-@login_required
 def api_get_config():
     """获取配置接口"""
     try:
@@ -3143,7 +2354,6 @@ def api_get_config():
 
 
 @app.route('/api/config', methods=['POST'])
-@login_required
 def api_save_config():
     """保存配置接口"""
     try:
@@ -3224,7 +2434,6 @@ def api_save_config():
 
 
 @app.route('/api/restart', methods=['POST'])
-@login_required
 def api_restart():
     """重启服务器接口"""
     try:
@@ -3246,7 +2455,6 @@ def api_restart():
 
 
 @app.route('/api/init', methods=['POST'])
-@login_required
 def api_init():
     """全量重建知识库接口"""
     try:
@@ -3282,7 +2490,6 @@ def api_init():
 
 
 @app.route('/api/rebuild', methods=['POST'])
-@login_required
 def api_rebuild():
     """增量更新知识库接口"""
     try:
@@ -3309,7 +2516,6 @@ def api_rebuild():
 
 
 @app.route('/api/stats')
-@login_required
 def api_stats():
     """统计信息接口"""
     try:
@@ -3593,100 +2799,9 @@ def api_download_file():
     except Exception as e:
         import logging
         import traceback
-        logging.error(f"[open_file] 异常：{e}")
+        logging.error(f"[download_file] 异常：{e}")
         logging.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/ai_format', methods=['POST'])
-def api_ai_format():
-    """AI格式化文件内容"""
-    try:
-        data = request.json
-        content = data.get('content', '')
-        keywords = data.get('keywords', [])
-        pattern = data.get('pattern', '')
-        exact_match = data.get('exact_match', False)
-        
-        if not content:
-            return jsonify({'error': '内容为空'}), 400
-        
-        # 调用大模型格式化内容
-        formatted_content = ai_format_content(content, keywords, pattern, exact_match)
-        
-        return jsonify({
-            'success': True,
-            'formatted_content': formatted_content
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-def ai_format_content(content, keywords=[], pattern='', exact_match=False):
-    """使用AI格式化内容"""
-    try:
-        # 动态导入配置，支持热切换
-        import importlib
-        from config import LOCAL_MODEL_CONFIG, ZHIPU_CONFIG, DEFAULT_MODEL_PROVIDER
-        
-        # 重新加载配置模块，支持热切换
-        import config
-        importlib.reload(config)
-        
-        # 根据最新配置选择模型提供商
-        model_provider = config.DEFAULT_MODEL_PROVIDER
-        
-        # 构建提示词
-        prompt = f"请将以下文本进行美化和优化格式，保持原有的语义和信息，同时保留关键词的高亮标记（<span class='highlight'>...</span>）：\n\n{content}"
-        
-        # 根据模型提供商调用不同的API
-        if model_provider == 'local':
-            # 调用本地Ollama模型
-            import requests
-            
-            api_url = config.LOCAL_MODEL_CONFIG['api_base']
-            model_name = config.LOCAL_MODEL_CONFIG['model']
-            temperature = config.LOCAL_MODEL_CONFIG['temperature']
-            
-            # 构建请求
-            data = {
-                "model": model_name,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature
-            }
-            
-            # 发送请求
-            response = requests.post(api_url, json=data, timeout=60)
-            response.raise_for_status()
-            
-            # 解析响应
-            result = response.json()
-            formatted_content = result.get('choices', [{}])[0].get('message', {}).get('content', content)
-            
-            return formatted_content
-        else:
-            # 调用智普模型
-            global llm
-            
-            # 如果没有LLM或者配置已更改，重新初始化
-            if not llm or hasattr(llm, 'model') and llm.model != config.ZHIPU_CONFIG.get('model', 'glm-4-flash'):
-                from zhipu_llm import ZhipuLLM
-                llm = ZhipuLLM(config.ZHIPU_CONFIG)
-                print("智谱AI已重新初始化")
-            
-            # 调用LLM
-            messages = [{"role": "user", "content": prompt}]
-            response = llm.chat(messages)
-            
-            # 确保高亮标记被保留
-            if not response:
-                return content
-            
-            # 返回AI格式化后的内容
-            return response
-    except Exception as e:
-        # 出错时返回原始内容
-        return content
 
 
 # ============== 自然语言到正则的转换 ==============
@@ -3852,256 +2967,6 @@ def api_regex_search():
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== 知识图谱相关接口 ====================
-
-@app.route('/api/kg/stats')
-def api_kg_stats():
-    """获取知识图谱统计信息"""
-    try:
-        from knowledge_graph import KnowledgeGraph
-        kg = KnowledgeGraph()
-        stats = kg.get_stats()
-        return jsonify(stats)
-    except Exception as e:
-        logging.error(f"获取知识图谱统计失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/kg/entities')
-def api_kg_entities():
-    """获取实体列表"""
-    try:
-        from knowledge_graph import KnowledgeGraph
-        kg = KnowledgeGraph()
-        
-        entity_type = request.args.get('type', '')
-        keyword = request.args.get('keyword', '')
-        limit = int(request.args.get('limit', 50))
-        
-        if keyword:
-            entities = kg.search_entities(keyword, limit)
-        elif entity_type:
-            entities = kg.get_entities_by_type(entity_type)
-        else:
-            entities = []
-            entity_keys = kg.redis_client.keys(f"{kg.entity_prefix}*")
-            for entity_key in entity_keys[:limit]:
-                entity_data = kg.redis_client.get(entity_key)
-                if entity_data:
-                    from knowledge_graph import Entity
-                    entities.append(Entity.from_dict(json.loads(entity_data)))
-        
-        return jsonify({
-            'total': len(entities),
-            'entities': [e.to_dict() for e in entities]
-        })
-    except Exception as e:
-        logging.error(f"获取实体列表失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/kg/entity/<entity_id>')
-def api_kg_entity(entity_id):
-    """获取单个实体详情"""
-    try:
-        from knowledge_graph import KnowledgeGraph
-        kg = KnowledgeGraph()
-        
-        entity = kg.get_entity(entity_id)
-        if not entity:
-            return jsonify({'error': '实体不存在'}), 404
-        
-        relations = kg.get_relations_by_entity(entity_id)
-        
-        return jsonify({
-            'entity': entity.to_dict(),
-            'relations': [r.to_dict() for r in relations]
-        })
-    except Exception as e:
-        logging.error(f"获取实体详情失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/kg/graph')
-def api_kg_graph():
-    """获取知识图谱数据"""
-    try:
-        from knowledge_graph import KnowledgeGraph
-        kg = KnowledgeGraph()
-        
-        entity_id = request.args.get('entity_id', '')
-        depth = int(request.args.get('depth', 2))
-        
-        graph_data = kg.get_graph_data(entity_id if entity_id else None, depth)
-        
-        return jsonify(graph_data)
-    except Exception as e:
-        logging.error(f"获取知识图谱数据失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/kg/extract', methods=['POST'])
-def api_kg_extract():
-    """从文本中抽取知识"""
-    try:
-        from knowledge_extractor import KnowledgeExtractor
-        from knowledge_graph import KnowledgeGraph
-        
-        data = request.json
-        text = data.get('text', '')
-        doc_id = data.get('doc_id', '')
-        
-        if not text:
-            return jsonify({'error': '文本不能为空'}), 400
-        
-        kg = KnowledgeGraph()
-        extractor = KnowledgeExtractor(llm_instance=llm, knowledge_graph=kg)
-        
-        result = extractor.extract_and_save(text, doc_id)
-        
-        return jsonify(result)
-    except Exception as e:
-        logging.error(f"知识抽取失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/kg/batch_extract', methods=['POST'])
-def api_kg_batch_extract():
-    """批量从文档中抽取知识"""
-    try:
-        from knowledge_extractor import KnowledgeExtractor
-        from knowledge_graph import KnowledgeGraph
-        import redis
-        from config import REDIS_CONFIG, KEY_PREFIX
-        
-        data = request.json
-        limit = data.get('limit', 10)
-        
-        documents = []
-        
-        redis_client = redis.Redis(
-            host=REDIS_CONFIG['host'],
-            port=REDIS_CONFIG['port'],
-            db=REDIS_CONFIG['db'],
-            password=REDIS_CONFIG['password'],
-            decode_responses=False
-        )
-        
-        doc_keys = list(redis_client.scan_iter(match=f"{KEY_PREFIX}*", count=100))
-        
-        for doc_key in doc_keys[:limit]:
-            try:
-                doc_data = redis_client.json().get(doc_key)
-                if doc_data:
-                    content = doc_data.get('content', '')
-                    if isinstance(content, bytes):
-                        content = content.decode('utf-8', errors='replace')
-                    documents.append({
-                        'id': doc_key.decode('utf-8').split(':')[-1] if isinstance(doc_key, bytes) else doc_key.split(':')[-1],
-                        'content': content
-                    })
-            except Exception as e:
-                logging.warning(f"读取文档失败 {doc_key}: {e}")
-                continue
-        
-        if not documents:
-            return jsonify({'error': '没有可处理的文档'}), 400
-        
-        kg = KnowledgeGraph()
-        extractor = KnowledgeExtractor(llm_instance=llm, knowledge_graph=kg)
-        
-        result = extractor.batch_extract_from_documents(documents)
-        
-        return jsonify(result)
-    except Exception as e:
-        logging.error(f"批量知识抽取失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/kg/clear', methods=['POST'])
-def api_kg_clear():
-    """清空知识图谱"""
-    try:
-        from knowledge_graph import KnowledgeGraph
-        kg = KnowledgeGraph()
-        
-        success = kg.clear_all()
-        
-        return jsonify({'success': success})
-    except Exception as e:
-        logging.error(f"清空知识图谱失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-def check_auth():
-    """验证用户是否已登录"""
-    from config import AUTH_CONFIG
-
-    # 如果未配置认证信息，则不需要登录
-    if not AUTH_CONFIG['username'] or not AUTH_CONFIG['password']:
-        return True
-
-    # 检查session
-    from flask import session
-    return session.get('logged_in', False)
-
-
-def login_required(f):
-    """登录验证装饰器"""
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not check_auth():
-            return jsonify({'error': '请先登录'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
-
-@app.route('/api/login', methods=['POST'])
-def api_login():
-    """用户登录"""
-    try:
-        data = request.get_json()
-        username = data.get('username', '')
-        password = data.get('password', '')
-
-        from config import AUTH_CONFIG
-
-        # 验证用户名和密码
-        if username == AUTH_CONFIG['username'] and password == AUTH_CONFIG['password']:
-            from flask import session
-            session['logged_in'] = True
-            return jsonify({'success': True, 'message': '登录成功'})
-        else:
-            return jsonify({'success': False, 'message': '用户名或密码错误'}), 401
-
-    except Exception as e:
-        logging.error(f"登录失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/logout', methods=['POST'])
-def api_logout():
-    """用户登出"""
-    try:
-        from flask import session
-        session.pop('logged_in', None)
-        return jsonify({'success': True, 'message': '登出成功'})
-    except Exception as e:
-        logging.error(f"登出失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/check_auth', methods=['GET'])
-def api_check_auth():
-    """检查认证状态"""
-    try:
-        is_logged_in = check_auth()
-        return jsonify({'logged_in': is_logged_in})
-    except Exception as e:
-        logging.error(f"检查认证状态失败：{str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
 def run_server(host='0.0.0.0', port=5000, debug=False):
     """启动服务器"""
     print(f"\n启动Web服务器: http://{host}:{port}")
@@ -4119,16 +2984,9 @@ if __name__ == '__main__':
     kb = KnowledgeBase(use_llm=True)
     
     # 初始化LLM
-    from config import DEFAULT_MODEL_PROVIDER
-    
-    if DEFAULT_MODEL_PROVIDER == 'local':
-        # 使用本地模型
-        print("使用本地模型")
-    else:
-        # 使用智普模型
-        if ZHIPU_CONFIG.get('api_key'):
-            llm = ZhipuLLM(ZHIPU_CONFIG)
-            print("智谱AI已初始化")
+    if ZHIPU_CONFIG.get('api_key'):
+        llm = ZhipuLLM(ZHIPU_CONFIG)
+        print("智谱AI已初始化")
     
     # 等待模型加载完成
     print("等待模型加载...")

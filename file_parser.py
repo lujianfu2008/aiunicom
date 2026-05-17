@@ -776,11 +776,20 @@ class FileParser:
             return f"[PPT文件: {os.path.basename(file_path)}]"
     
     def _clean_content(self, content: str) -> str:
-        """清理内容，去除无用字符"""
+        """清理内容，去除无用字符，保留段落换行结构"""
+        # 去除HTML标签
         content = re.sub(r'<[^>]+>', '', content)
-        content = re.sub(r'\s+', ' ', content)
+        # 统一换行符
+        content = content.replace('\r\n', '\n').replace('\r', '\n')
+        # 保留换行符，只压缩同一行内的连续空白
+        lines = content.split('\n')
+        lines = [re.sub(r'[ \t]+', ' ', line).strip() for line in lines]
+        content = '\n'.join(lines)
+        # 连续空行最多保留一个（段落分隔）
+        content = re.sub(r'\n{3,}', '\n\n', content)
+        # 移除控制字符（保留 \n \t）
         content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', content)
-        
+
         return content.strip()
     
     def _extract_problem_info(self, file_name: str, content: str) -> Dict:
